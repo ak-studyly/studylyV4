@@ -6,8 +6,8 @@ import { BookOpen, Upload, Star, ArrowRight, FileText, FlaskConical, Atom, PlusC
 import Navbar from "@/components/layout/Navbar";
 import AddCollegeModal from "@/components/ui/AddCollegeModal";
 import { createClient } from "@/lib/supabase/client";
-import { cn, BRANCHES, SEMESTERS, BMSCE_CYCLES, needsCycle, getEffectiveCycle, CLASS_KEY, type Cycle } from "@/lib/utils";
-import type { College, SavedClass } from "@/types";
+import { cn, BRANCHES, SEMESTERS, BMSCE_CYCLES, needsCycle, getEffectiveCycle, CLASS_KEY, } from "@/lib/utils";
+import type { College, SavedClass, Cycle } from "@/types";
 
 export default function HomePage() {
   const router = useRouter();
