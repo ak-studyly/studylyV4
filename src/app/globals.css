@@ -13,7 +13,7 @@
 
 @layer components {
   .card {
-    @apply bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/8 rounded-xl;
+    @apply bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 rounded-xl;
   }
   .btn-primary {
     @apply bg-brand text-white rounded-lg px-4 py-2 text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed;
