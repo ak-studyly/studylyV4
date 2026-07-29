@@ -15,9 +15,8 @@ import {
   formatPostTime, formatFileSize,
   BMSCE_CYCLES, BMSCE_SUBJECTS, BMSCE_SHARED_SUBJECTS,
   needsCycle, getEffectiveCycle, getVoterKey,
-  type Cycle,
 } from "@/lib/utils";
-import type { College, Material, MaterialType, SavedClass } from "@/types";
+import type { College, Material, MaterialType, SavedClass, Cycle } from "@/types";
 
 const TYPE_OPTIONS = [
   { value: "all",  label: "all" },
