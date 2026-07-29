@@ -141,7 +141,7 @@ export default function MaterialsClient({
       setMaterials((prev) => prev.map((m) => m.id === material.id ? { ...m, upvotes: m.upvotes + 1 } : m));
       const next = new Set(votedIds).add(material.id);
       setVotedIds(next);
-      localStorage.setItem("studyly_voted", JSON.stringify([...next]));
+      localStorage.setItem("studyly_voted", JSON.stringify(Array.from(next)));
     }
   }
 
