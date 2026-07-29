@@ -9,9 +9,8 @@ import {
   cn, BRANCHES, SEMESTERS, CLASS_KEY,
   BMSCE_CYCLES, BMSCE_SUBJECTS, BMSCE_SHARED_SUBJECTS,
   needsCycle, getEffectiveCycle,
-  type Cycle,
 } from "@/lib/utils";
-import type { College, MaterialType, SavedClass } from "@/types";
+import type { College, MaterialType, SavedClass, Cycle } from "@/types";
 
 const MATERIAL_TYPES: { value: MaterialType; label: string; desc: string }[] = [
   { value: "notes",  label: "notes",   desc: "general notes" },
