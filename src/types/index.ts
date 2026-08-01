@@ -7,9 +7,6 @@ export type College = {
   created_at: string;
 };
 
-// notes = general notes
-// cie1/cie2/cie3 = internal assessment papers/notes
-// exam = end semester
 export type MaterialType = "notes" | "cie1" | "cie2" | "cie3" | "exam";
 
 export type Cycle = "chemistry" | "physics";
