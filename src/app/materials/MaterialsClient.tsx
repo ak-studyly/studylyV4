@@ -10,13 +10,14 @@ import Navbar from "@/components/layout/Navbar";
 import AddCollegeModal from "@/components/ui/AddCollegeModal";
 import { createClient } from "@/lib/supabase/client";
 import {
-  cn, BRANCHES, SEMESTERS, CLASS_KEY,
+  cn, BRANCHES, SEMESTERS, CLASS_KEY, VOTED_KEY,
   MATERIAL_TYPE_LABELS, MATERIAL_TYPE_STYLES,
   formatPostTime, formatFileSize,
   BMSCE_CYCLES, BMSCE_SUBJECTS, BMSCE_SHARED_SUBJECTS,
-  needsCycle, getEffectiveCycle, getVoterKey,
+  needsCycle, getVoterKey,
+  type Cycle,
 } from "@/lib/utils";
-import type { College, Material, MaterialType, SavedClass, Cycle } from "@/types";
+import type { College, Material, SavedClass } from "@/types";
 
 const TYPE_OPTIONS = [
   { value: "all",  label: "all" },
@@ -44,13 +45,16 @@ type Props = {
 };
 
 export default function MaterialsClient({
-  colleges, initialMaterials, initialCollege, initialParams,
+  colleges, initialMaterials, initialParams,
 }: Props) {
   const router = useRouter();
 
   const [collegeId, setCollegeId]   = useState(initialParams.collegeId);
   const [branch, setBranch]         = useState(initialParams.branch);
   const [semester, setSemester]     = useState(initialParams.semester ? String(initialParams.semester) : "");
+  // `cycle` is always the raw, directly-picked value for THIS semester.
+  // It is never flipped or transformed — the same value is used for
+  // the subject list, the DB query, and (in upload) the DB write.
   const [cycle, setCycle]           = useState<Cycle | "">(initialParams.cycle);
   const [subject, setSubject]       = useState(initialParams.subject);
   const [typeFilter, setTypeFilter] = useState(initialParams.type || "all");
@@ -58,12 +62,12 @@ export default function MaterialsClient({
   const [loading, setLoading]       = useState(false);
   const [searched, setSearched]     = useState(initialMaterials.length > 0);
   const [votedIds, setVotedIds]     = useState<Set<string>>(new Set());
+  const [votingId, setVotingId]     = useState<string | null>(null);
   const [addCollegeOpen, setAddCollegeOpen] = useState(false);
 
   const selectedCollege = colleges.find((c) => c.id === collegeId);
   const showCycle = selectedCollege ? needsCycle(selectedCollege.name, parseInt(semester || "0")) : false;
-  const effectiveCycle = (showCycle && cycle) ? getEffectiveCycle(cycle, parseInt(semester)) : null;
-  const availableSubjects = effectiveCycle ? BMSCE_SUBJECTS[effectiveCycle] : null;
+  const availableSubjects = (showCycle && cycle) ? BMSCE_SUBJECTS[cycle] : null;
 
   const step1Done = !!collegeId;
   const step2Done = step1Done && !!branch;
@@ -72,21 +76,19 @@ export default function MaterialsClient({
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("studyly_voted");
+      const stored = localStorage.getItem(VOTED_KEY);
       if (stored) setVotedIds(new Set(JSON.parse(stored)));
     } catch {}
   }, []);
 
-  // Save class to localStorage
   useEffect(() => {
     if (collegeId && branch && semester && selectedCollege) {
-      const ec = (showCycle && cycle) ? getEffectiveCycle(cycle, parseInt(semester)) : undefined;
       const saved: SavedClass = {
         collegeId,
         collegeName: selectedCollege.name,
         branch,
         semester: parseInt(semester),
-        cycle: ec,
+        cycle: (showCycle && cycle) ? cycle : undefined,
       };
       localStorage.setItem(CLASS_KEY, JSON.stringify(saved));
     }
@@ -110,13 +112,14 @@ export default function MaterialsClient({
       .eq("approved", true)
       .order("upvotes", { ascending: false });
 
-    if (effectiveCycle) {
+    if (showCycle && cycle) {
       if (subject && BMSCE_SHARED_SUBJECTS.includes(subject)) {
+        // shared subject (e.g. Maths) is stored with cycle = null
         q = q.eq("subject", subject);
       } else if (subject) {
-        q = q.eq("subject", subject).or(`cycle.eq.${effectiveCycle},cycle.is.null`);
+        q = q.eq("subject", subject).or(`cycle.eq.${cycle},cycle.is.null`);
       } else {
-        q = q.or(`cycle.eq.${effectiveCycle},cycle.is.null`);
+        q = q.or(`cycle.eq.${cycle},cycle.is.null`);
       }
     } else if (subject.trim()) {
       q = q.ilike("subject", `%${subject.trim()}%`);
@@ -127,22 +130,32 @@ export default function MaterialsClient({
     const { data } = await q;
     setMaterials((data as Material[]) ?? []);
     setLoading(false);
-  }, [collegeId, branch, semester, cycle, subject, typeFilter, showCycle, effectiveCycle]);
+  }, [collegeId, branch, semester, cycle, subject, typeFilter, showCycle]);
 
-  async function handleUpvote(material: Material) {
-    if (votedIds.has(material.id)) return;
+  async function handleToggleUpvote(material: Material) {
+    if (votingId) return; // prevent double-click races
+    setVotingId(material.id);
     const voterKey = getVoterKey();
     const supabase = createClient();
-    const { data } = await supabase.rpc("upvote_material", {
+
+    const { data, error } = await supabase.rpc("toggle_upvote", {
       p_material_id: material.id,
       p_voter_key: voterKey,
     });
-    if (data) {
-      setMaterials((prev) => prev.map((m) => m.id === material.id ? { ...m, upvotes: m.upvotes + 1 } : m));
-      const next = new Set(votedIds).add(material.id);
-      setVotedIds(next);
-      localStorage.setItem("studyly_voted", JSON.stringify(Array.from(next)));
-    }
+
+    setVotingId(null);
+    if (error || !data || !data[0]) return;
+
+    const { voted, upvotes } = data[0] as { voted: boolean; upvotes: number };
+
+    setMaterials((prev) => prev.map((m) => m.id === material.id ? { ...m, upvotes } : m));
+
+    setVotedIds((prev) => {
+      const next = new Set(prev);
+      if (voted) next.add(material.id); else next.delete(material.id);
+      localStorage.setItem(VOTED_KEY, JSON.stringify([...next]));
+      return next;
+    });
   }
 
   return (
@@ -154,7 +167,6 @@ export default function MaterialsClient({
           <p className="text-sm text-gray-500 dark:text-gray-400">PDF notes, CIE papers and end-sem material — shared by students.</p>
         </div>
 
-        {/* Filter card */}
         <div className="card p-5 mb-6">
           <div className="flex items-center gap-2 mb-4 flex-wrap">
             {[
@@ -171,13 +183,11 @@ export default function MaterialsClient({
           </div>
 
           <div className="flex flex-col gap-2">
-            {/* College */}
             <select className="select" value={collegeId} onChange={(e) => { setCollegeId(e.target.value); setBranch(""); setSemester(""); setCycle(""); setSubject(""); setMaterials([]); setSearched(false); }}>
               <option value="">select your college…</option>
               {colleges.map((c) => <option key={c.id} value={c.id}>{c.name} — {c.city}</option>)}
             </select>
 
-            {/* Branch */}
             <div className={cn("transition-all duration-300 overflow-hidden", step1Done ? "max-h-20 opacity-100" : "max-h-0 opacity-0")}>
               <select className="select" value={branch} onChange={(e) => { setBranch(e.target.value); setSemester(""); setCycle(""); setSubject(""); setMaterials([]); setSearched(false); }}>
                 <option value="">select branch…</option>
@@ -185,7 +195,6 @@ export default function MaterialsClient({
               </select>
             </div>
 
-            {/* Semester */}
             <div className={cn("transition-all duration-300 overflow-hidden", step2Done ? "max-h-20 opacity-100" : "max-h-0 opacity-0")}>
               <select className="select" value={semester} onChange={(e) => { setSemester(e.target.value); setCycle(""); setSubject(""); setMaterials([]); setSearched(false); }}>
                 <option value="">select semester…</option>
@@ -193,9 +202,8 @@ export default function MaterialsClient({
               </select>
             </div>
 
-            {/* Cycle */}
-            <div className={cn("transition-all duration-300 overflow-hidden", (step3Done && showCycle) ? "max-h-36 opacity-100" : "max-h-0 opacity-0")}>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">which cycle are you in?</p>
+            <div className={cn("transition-all duration-300 overflow-hidden", (step3Done && showCycle) ? "max-h-32 opacity-100" : "max-h-0 opacity-0")}>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">which cycle are you covering this semester?</p>
               <div className="grid grid-cols-2 gap-2">
                 {BMSCE_CYCLES.map((c) => (
                   <button key={c.value} type="button" onClick={() => { setCycle(c.value); setSubject(""); }}
@@ -206,17 +214,8 @@ export default function MaterialsClient({
                   </button>
                 ))}
               </div>
-              {semester === "2" && cycle && (
-                <p className="text-xs text-gray-400 dark:text-gray-600 mt-2">
-                  Sem 2 swaps your cycle — showing{" "}
-                  <span className="font-medium text-gray-600 dark:text-gray-400">
-                    {getEffectiveCycle(cycle, 2) === "chemistry" ? "Chemistry" : "Physics"} Cycle
-                  </span>
-                </p>
-              )}
             </div>
 
-            {/* Subject */}
             <div className={cn("transition-all duration-300 overflow-hidden", canSearch ? "max-h-40 opacity-100" : "max-h-0 opacity-0")}>
               {availableSubjects ? (
                 <div>
@@ -243,7 +242,6 @@ export default function MaterialsClient({
               )}
             </div>
 
-            {/* Search button */}
             <div className={cn("transition-all duration-300 overflow-hidden", canSearch ? "max-h-20 opacity-100" : "max-h-0 opacity-0")}>
               <button onClick={() => fetchMaterials()} disabled={!canSearch || loading} className="btn-primary w-full flex items-center justify-center gap-2 mt-1">
                 <Search size={14} />
@@ -258,10 +256,8 @@ export default function MaterialsClient({
           </button>
         </div>
 
-        {/* Results */}
         {searched && (
           <>
-            {/* Type filter */}
             <div className="flex items-center gap-2 mb-4 flex-wrap">
               <SlidersHorizontal size={13} className="text-gray-400 dark:text-gray-600" />
               {TYPE_OPTIONS.map((t) => (
@@ -293,7 +289,13 @@ export default function MaterialsClient({
               <div className="flex flex-col gap-3">
                 <p className="text-xs text-gray-400 dark:text-gray-600">{materials.length} result{materials.length !== 1 ? "s" : ""} — sorted by upvotes</p>
                 {materials.map((m) => (
-                  <MaterialCard key={m.id} material={m} hasVoted={votedIds.has(m.id)} onUpvote={() => handleUpvote(m)} />
+                  <MaterialCard
+                    key={m.id}
+                    material={m}
+                    hasVoted={votedIds.has(m.id)}
+                    voting={votingId === m.id}
+                    onToggleUpvote={() => handleToggleUpvote(m)}
+                  />
                 ))}
               </div>
             )}
@@ -315,7 +317,14 @@ export default function MaterialsClient({
   );
 }
 
-function MaterialCard({ material: m, hasVoted, onUpvote }: { material: Material; hasVoted: boolean; onUpvote: () => void }) {
+function MaterialCard({
+  material: m, hasVoted, voting, onToggleUpvote,
+}: {
+  material: Material;
+  hasVoted: boolean;
+  voting: boolean;
+  onToggleUpvote: () => void;
+}) {
   return (
     <div className="card p-4 flex items-center gap-4 hover:border-brand-mid dark:hover:border-brand-mid transition-colors">
       <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0",
@@ -345,10 +354,18 @@ function MaterialCard({ material: m, hasVoted, onUpvote }: { material: Material;
       </div>
 
       <div className="flex items-center gap-2 flex-shrink-0">
-        <button onClick={onUpvote} disabled={hasVoted}
-          className={cn("flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-all",
-            hasVoted ? "bg-brand-light dark:bg-green-950 border-brand-mid text-brand dark:text-brand-mid cursor-default"
-                     : "border-black/10 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:border-brand dark:hover:border-brand-mid hover:text-brand dark:hover:text-brand-mid")}>
+        <button
+          onClick={onToggleUpvote}
+          disabled={voting}
+          title={hasVoted ? "click to remove your upvote" : "upvote"}
+          className={cn(
+            "flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-all",
+            hasVoted
+              ? "bg-brand-light dark:bg-green-950 border-brand-mid text-brand dark:text-brand-mid"
+              : "border-black/10 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:border-brand dark:hover:border-brand-mid hover:text-brand dark:hover:text-brand-mid",
+            voting && "opacity-50"
+          )}
+        >
           <Star size={12} fill={hasVoted ? "currentColor" : "none"} />
           {m.upvotes}
         </button>
