@@ -153,7 +153,7 @@ export default function MaterialsClient({
     setVotedIds((prev) => {
       const next = new Set(prev);
       if (voted) next.add(material.id); else next.delete(material.id);
-      localStorage.setItem(VOTED_KEY, JSON.stringify([...next]));
+      localStorage.setItem(VOTED_KEY, JSON.stringify(Array.from(next)));
       return next;
     });
   }
