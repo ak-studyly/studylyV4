@@ -6,8 +6,8 @@ import { BookOpen, Upload, Star, ArrowRight, FileText, FlaskConical, Atom, PlusC
 import Navbar from "@/components/layout/Navbar";
 import AddCollegeModal from "@/components/ui/AddCollegeModal";
 import { createClient } from "@/lib/supabase/client";
-import { cn, BRANCHES, SEMESTERS, BMSCE_CYCLES, needsCycle, getEffectiveCycle, CLASS_KEY, } from "@/lib/utils";
-import type { College, SavedClass, Cycle } from "@/types";
+import { cn, BRANCHES, SEMESTERS, BMSCE_CYCLES, needsCycle, CLASS_KEY, type Cycle } from "@/lib/utils";
+import type { College, SavedClass } from "@/types";
 
 export default function HomePage() {
   const router = useRouter();
@@ -45,15 +45,14 @@ export default function HomePage() {
 
   function handleGo() {
     if (!canGo || !selectedCollege) return;
-    const effectiveCycle = (showCycle && cycle)
-      ? getEffectiveCycle(cycle as Cycle, parseInt(semester))
-      : undefined;
+    // The raw cycle picked is used directly — no derived/flipped
+    // value. The picker itself always represents "this semester".
     const saved: SavedClass = {
       collegeId,
       collegeName: selectedCollege.name,
       branch,
       semester: parseInt(semester),
-      cycle: effectiveCycle,
+      cycle: (showCycle && cycle) ? cycle : undefined,
     };
     localStorage.setItem(CLASS_KEY, JSON.stringify(saved));
     router.push(buildUrl(saved));
@@ -74,10 +73,9 @@ export default function HomePage() {
         </h1>
 
         <p className="text-base text-gray-500 dark:text-gray-400 max-w-md leading-relaxed mb-10">
-          Notes, past papers, CIE prep and end-sem material — uploaded by your seniors and peers. PDF only.
+          Notes, CIE prep and end-sem material — uploaded by your seniors and peers. PDF only.
         </p>
 
-        {/* Saved class shortcut */}
         {savedClass ? (
           <div className="card p-5 w-full max-w-sm mb-6 text-left">
             <p className="text-xs font-medium text-gray-400 dark:text-gray-600 uppercase tracking-wider mb-3">your class</p>
@@ -94,18 +92,12 @@ export default function HomePage() {
               </p>
             </div>
             <div className="flex gap-2">
-              <button
-                onClick={() => router.push(buildUrl(savedClass))}
-                className="btn-primary flex-1 flex items-center justify-center gap-2"
-              >
+              <button onClick={() => router.push(buildUrl(savedClass))} className="btn-primary flex-1 flex items-center justify-center gap-2">
                 <BookOpen size={15} />
                 browse materials
                 <ArrowRight size={14} />
               </button>
-              <button
-                onClick={() => { localStorage.removeItem(CLASS_KEY); setSavedClass(null); }}
-                className="btn-secondary px-4 text-xs"
-              >
+              <button onClick={() => { localStorage.removeItem(CLASS_KEY); setSavedClass(null); }} className="btn-secondary px-4 text-xs">
                 change
               </button>
             </div>
@@ -114,7 +106,6 @@ export default function HomePage() {
           <div className="card p-5 w-full max-w-sm mb-6 text-left">
             <p className="text-xs font-medium text-gray-400 dark:text-gray-600 mb-4">find materials for your class</p>
 
-            {/* Progress dots */}
             <div className="flex items-center gap-2 mb-4 flex-wrap">
               {[
                 { done: step1Done, label: "college" },
@@ -149,36 +140,19 @@ export default function HomePage() {
                 </select>
               </div>
 
-              {/* Cycle selector — BMSCE sem 1 & 2 only */}
+              {/* Cycle — asked fresh for every semester it applies to, no auto-derived swap */}
               <div className={cn("transition-all duration-300 overflow-hidden", (step3Done && showCycle) ? "max-h-32 opacity-100" : "max-h-0 opacity-0")}>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">which cycle are you in?</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">which cycle are you covering this semester?</p>
                 <div className="grid grid-cols-2 gap-2">
                   {BMSCE_CYCLES.map((c) => (
-                    <button
-                      key={c.value}
-                      type="button"
-                      onClick={() => setCycle(c.value)}
-                      className={cn(
-                        "flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm transition-all",
-                        cycle === c.value
-                          ? "bg-brand border-brand text-white font-medium"
-                          : "border-black/10 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:border-brand dark:hover:border-brand-mid"
-                      )}
-                    >
+                    <button key={c.value} type="button" onClick={() => setCycle(c.value)}
+                      className={cn("flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm transition-all",
+                        cycle === c.value ? "bg-brand border-brand text-white font-medium" : "border-black/10 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:border-brand dark:hover:border-brand-mid")}>
                       {c.value === "chemistry" ? <FlaskConical size={15} /> : <Atom size={15} />}
                       {c.label}
                     </button>
                   ))}
                 </div>
-                {semester === "2" && cycle && (
-                  <p className="text-xs text-gray-400 dark:text-gray-600 mt-2">
-                    Sem 2 swaps your cycle — you'll see{" "}
-                    <span className="font-medium text-gray-600 dark:text-gray-400">
-                      {getEffectiveCycle(cycle as Cycle, 2) === "chemistry" ? "Chemistry" : "Physics"} Cycle
-                    </span>{" "}
-                    materials.
-                  </p>
-                )}
               </div>
 
               <button onClick={handleGo} disabled={!canGo} className="btn-primary flex items-center justify-center gap-2 mt-1">
