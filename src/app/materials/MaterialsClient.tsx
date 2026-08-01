@@ -146,7 +146,7 @@ export default function MaterialsClient({
     setVotingId(null);
     if (error || !data || !data[0]) return;
 
-    const { voted, upvotes } = data[0] as { voted: boolean; upvotes: number };
+    const { voted, new_upvotes: upvotes } = data[0] as { voted: boolean; new_upvotes: number };
 
     setMaterials((prev) => prev.map((m) => m.id === material.id ? { ...m, upvotes } : m));
 
