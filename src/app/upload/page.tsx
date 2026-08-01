@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   cn, BRANCHES, SEMESTERS, CLASS_KEY,
   BMSCE_CYCLES, BMSCE_SUBJECTS, BMSCE_SHARED_SUBJECTS,
+  BMSCE_ELECTIVES, isElective,
   needsCycle, resolveCycleForStorage,
   type Cycle,
 } from "@/lib/utils";
@@ -85,7 +86,7 @@ export default function UploadPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!file || !collegeId || !branch || !semester || !title) return;
-    if (showCycle && !cycle) return;
+    if (showCycle && !cycle && !isElective(finalSubject)) return;
     setLoading(true);
     setError(null);
     const supabase = createClient();
@@ -223,6 +224,24 @@ export default function UploadPage() {
             )}
           </div>
 
+          {/* Electives — same notes apply to sem 1 & 2, no cycle involved */}
+          {(semester === "1" || semester === "2") && BMSCE_ELECTIVES.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-2">
+                or is this an elective? <span className="text-gray-300 dark:text-gray-700">(same notes for sem 1 &amp; 2)</span>
+              </label>
+              <div className="flex gap-2 flex-wrap">
+                {BMSCE_ELECTIVES.map((s) => (
+                  <button key={s} type="button" onClick={() => { setSubject(s === subject ? "" : s); setCycle(""); }}
+                    className={cn("text-xs px-3 py-1.5 rounded-full border transition-all",
+                      subject === s ? "bg-brand border-brand text-white font-medium" : "border-black/10 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800")}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-1.5">title</label>
             <input className="input" placeholder="e.g. Chemistry Unit 2 — Thermodynamics notes" value={title} onChange={(e) => setTitle(e.target.value)} required />
@@ -287,7 +306,7 @@ export default function UploadPage() {
             </div>
           )}
 
-          <button type="submit" disabled={loading || !file || (showCycle && !cycle)} className="btn-primary mt-1">
+          <button type="submit" disabled={loading || !file || (showCycle && !cycle && !isElective(finalSubject))} className="btn-primary mt-1">
             {loading ? "uploading…" : "submit for review"}
           </button>
 
