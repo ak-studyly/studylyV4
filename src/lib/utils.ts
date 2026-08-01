@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { formatDistanceToNow, format, isToday, isYesterday } from "date-fns";
-import type { MaterialType, Cycle } from "@/types";
+import type { MaterialType } from "@/types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -39,28 +39,29 @@ export const MATERIAL_TYPE_STYLES: Record<MaterialType, string> = {
 };
 
 export const BRANCHES = [
-  "Computer Science",
-  "Information Science",
-  "Electronics & Communication",
-  "Electrical Engineering",
-  "Mechanical Engineering",
-  "Civil Engineering",
-  "Chemical Engineering",
-  "Data Science",
-  "Economics",
-  "Business Administration",
-  "Physics",
-  "Mathematics",
-  "Biotechnology",
+  "Computer Science", "Information Science", "Electronics & Communication",
+  "Electrical Engineering", "Mechanical Engineering", "Civil Engineering",
+  "Chemical Engineering", "Data Science", "Economics", "Business Administration",
+  "Physics", "Mathematics", "Biotechnology",
 ];
 
 export const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8];
 
-export const CLASS_KEY   = "studyly_class";
-export const THEME_KEY   = "studyly_theme";
-export const VOTER_KEY   = "studyly_voter";
+export const CLASS_KEY = "studyly_class";
+export const THEME_KEY = "studyly_theme";
+export const VOTER_KEY = "studyly_voter";
+export const VOTED_KEY = "studyly_voted";
 
 // ── BMSCE cycle logic ─────────────────────────────────────
+// NOTE: the cycle picker always asks "which cycle applies to
+// you THIS semester" — there is no automatic sem-2 swap. The
+// raw value picked is used, unmodified, everywhere: subject
+// list, browse query, and DB storage. This avoids the
+// double-flip bug where an already-resolved value was flipped
+// a second time after being round-tripped through localStorage
+// or the URL.
+
+export type Cycle = "chemistry" | "physics";
 
 export const BMSCE_CYCLES: { value: Cycle; label: string }[] = [
   { value: "chemistry", label: "Chemistry Cycle" },
@@ -78,17 +79,20 @@ export const BMSCE_SHARED_SUBJECTS = BMSCE_SUBJECTS.chemistry.filter((s) =>
   BMSCE_SUBJECTS.physics.includes(s)
 );
 
-// Sem 2 flips the cycle
-export function getEffectiveCycle(cycle: Cycle, semester: number): Cycle {
-  if (semester === 2) return cycle === "chemistry" ? "physics" : "chemistry";
-  return cycle;
-}
-
 export function needsCycle(collegeName: string, semester: number): boolean {
   return (
     collegeName.toLowerCase().includes("bms college") &&
     BMSCE_CYCLE_SEMESTERS.includes(semester)
   );
+}
+
+// Given a subject, which cycle should be stored in the DB?
+// Shared subjects (Maths) are stored with cycle = null so a
+// single upload is visible from both cycles' queries.
+export function resolveCycleForStorage(cycle: Cycle | "", subject: string): Cycle | null {
+  if (!cycle) return null;
+  if (BMSCE_SHARED_SUBJECTS.includes(subject)) return null;
+  return cycle;
 }
 
 export function getVoterKey(): string {
