@@ -24,6 +24,7 @@ export type Material = {
   title: string;
   type: MaterialType;
   file_url: string;
+  file_path: string;
   file_name: string;
   file_size: number | null;
   uploader_name: string;
