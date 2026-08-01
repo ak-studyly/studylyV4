@@ -84,7 +84,7 @@ export const BMSCE_SHARED_SUBJECTS = BMSCE_SUBJECTS.chemistry.filter((s) =>
 // of whether the student is in sem 1 or sem 2 — one set of notes
 // covers both. Fill in the actual subject names here.
 export const BMSCE_ELECTIVES: string[] = [
-  "Electronics", "Mechanical", "Civil", "Electrical"
+  // e.g. "Environmental Science", "Constitution of India"
 ];
 
 export function isElective(subject: string): boolean {
@@ -105,11 +105,13 @@ export function needsCycle(collegeName: string, semester: number): boolean {
 }
 
 // Given a subject, which cycle should be stored in the DB?
-// Shared subjects (Maths) are stored with cycle = null so a
-// single upload is visible from both cycles' queries.
+// Shared subjects (Maths) and electives are stored with cycle = null
+// so a single upload is visible regardless of cycle (and, for
+// electives, regardless of sem 1 vs sem 2 too — see isElective()).
 export function resolveCycleForStorage(cycle: Cycle | "", subject: string): Cycle | null {
   if (!cycle) return null;
   if (BMSCE_SHARED_SUBJECTS.includes(subject)) return null;
+  if (isElective(subject)) return null;
   return cycle;
 }
 
