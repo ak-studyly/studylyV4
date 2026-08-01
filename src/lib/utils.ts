@@ -79,6 +79,24 @@ export const BMSCE_SHARED_SUBJECTS = BMSCE_SUBJECTS.chemistry.filter((s) =>
   BMSCE_SUBJECTS.physics.includes(s)
 );
 
+// ── Electives shared across Sem 1 & Sem 2 ──────────────────
+// These subjects are identical regardless of cycle AND regardless
+// of whether the student is in sem 1 or sem 2 — one set of notes
+// covers both. Fill in the actual subject names here.
+export const BMSCE_ELECTIVES: string[] = [
+  "Electronics", "Mechanical", "Civil", "Electrical"
+];
+
+export function isElective(subject: string): boolean {
+  return BMSCE_ELECTIVES.includes(subject);
+}
+
+// For electives, query/store across both sem 1 and sem 2.
+// For everything else, just the exact semester selected.
+export function getSemestersForSubject(subject: string, semester: number): number[] {
+  return isElective(subject) ? [1, 2] : [semester];
+}
+
 export function needsCycle(collegeName: string, semester: number): boolean {
   return (
     collegeName.toLowerCase().includes("bms college") &&
