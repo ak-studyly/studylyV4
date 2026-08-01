@@ -8,16 +8,17 @@ import { createClient } from "@/lib/supabase/client";
 import {
   cn, BRANCHES, SEMESTERS, CLASS_KEY,
   BMSCE_CYCLES, BMSCE_SUBJECTS, BMSCE_SHARED_SUBJECTS,
-  needsCycle, getEffectiveCycle,
+  needsCycle, resolveCycleForStorage,
+  type Cycle,
 } from "@/lib/utils";
-import type { College, MaterialType, SavedClass, Cycle } from "@/types";
+import type { College, MaterialType, SavedClass } from "@/types";
 
 const MATERIAL_TYPES: { value: MaterialType; label: string; desc: string }[] = [
-  { value: "notes",  label: "notes",   desc: "general notes" },
-  { value: "cie1",   label: "CIE 1",   desc: "1st internal" },
-  { value: "cie2",   label: "CIE 2",   desc: "2nd internal" },
-  { value: "cie3",   label: "CIE 3",   desc: "3rd internal" },
-  { value: "exam",   label: "end sem", desc: "semester exam" },
+  { value: "notes", label: "notes",   desc: "general notes" },
+  { value: "cie1",  label: "CIE 1",   desc: "1st internal" },
+  { value: "cie2",  label: "CIE 2",   desc: "2nd internal" },
+  { value: "cie3",  label: "CIE 3",   desc: "3rd internal" },
+  { value: "exam",  label: "end sem", desc: "semester exam" },
 ];
 
 const MAX_SIZE_MB = 10;
@@ -29,6 +30,7 @@ export default function UploadPage() {
   const [collegeId, setCollegeId]         = useState("");
   const [branch, setBranch]               = useState("");
   const [semester, setSemester]           = useState("");
+  // Raw cycle picked, representing THIS semester directly — never flipped.
   const [cycle, setCycle]                 = useState<Cycle | "">("");
   const [subject, setSubject]             = useState("");
   const [customSubject, setCustomSubject] = useState("");
@@ -44,14 +46,7 @@ export default function UploadPage() {
 
   const selectedCollege = colleges.find((c) => c.id === collegeId);
   const showCycle = selectedCollege ? needsCycle(selectedCollege.name, parseInt(semester || "0")) : false;
-  const effectiveCycle = (showCycle && cycle) ? getEffectiveCycle(cycle, parseInt(semester)) : null;
-  const availableSubjects = effectiveCycle ? BMSCE_SUBJECTS[effectiveCycle] : null;
-
-  // The cycle stored in DB — null for shared subjects
-  const finalCycle = effectiveCycle
-    ? (subject && BMSCE_SHARED_SUBJECTS.includes(subject) ? null : effectiveCycle)
-    : null;
-
+  const availableSubjects = (showCycle && cycle) ? BMSCE_SUBJECTS[cycle] : null;
   const finalSubject = availableSubjects ? subject : customSubject;
 
   useEffect(() => {
@@ -65,7 +60,11 @@ export default function UploadPage() {
         setCollegeId(saved.collegeId);
         setBranch(saved.branch);
         setSemester(String(saved.semester));
-        if (saved.cycle) setCycle(saved.cycle);
+        // NOTE: we deliberately do NOT restore saved.cycle here.
+        // The cycle applies to a specific semester, and pre-filling
+        // it across a semester change is exactly the kind of stale
+        // carry-over that caused the earlier double-flip bug. The
+        // student re-picks their cycle each time they land here.
       }
     } catch {}
   }, []);
@@ -92,21 +91,32 @@ export default function UploadPage() {
     const supabase = createClient();
     try {
       const safeName = file.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9._-]/g, "");
+      // Path is scoped to the EXACT semester selected — no derived
+      // or effective semester is ever used for storage location.
       const path = `${collegeId}/${branch}/${semester}/${Date.now()}_${safeName}`;
+
       const { error: uploadError } = await supabase.storage
         .from("materials")
         .upload(path, file, { contentType: "application/pdf", cacheControl: "3600" });
       if (uploadError) throw new Error(uploadError.message);
+
       const { data: { publicUrl } } = supabase.storage.from("materials").getPublicUrl(path);
+
+      // cycle stored = null for shared subjects (Maths), otherwise
+      // the exact raw cycle picked — matching what the browse page
+      // queries by, with no transform in between.
+      const cycleForStorage = resolveCycleForStorage(cycle, finalSubject);
+
       const { error: insertError } = await supabase.from("materials").insert({
         college_id:    collegeId,
         branch,
         semester:      parseInt(semester),
-        cycle:         finalCycle,
+        cycle:         cycleForStorage,
         subject:       finalSubject || null,
         title:         title.trim(),
         type,
         file_url:      publicUrl,
+        file_path:     path,
         file_name:     file.name,
         file_size:     file.size,
         uploader_name: anonymous ? "anonymous" : (uploaderName.trim() || "anonymous"),
@@ -133,7 +143,7 @@ export default function UploadPage() {
           </p>
           <div className="flex gap-3 justify-center">
             <button onClick={() => router.push("/materials")} className="btn-secondary">browse materials</button>
-            <button onClick={() => { setSubmitted(false); setFile(null); setTitle(""); setSubject(""); setCustomSubject(""); }} className="btn-primary">upload another</button>
+            <button onClick={() => { setSubmitted(false); setFile(null); setTitle(""); setSubject(""); setCustomSubject(""); setCycle(""); }} className="btn-primary">upload another</button>
           </div>
         </div>
       </div>
@@ -148,7 +158,6 @@ export default function UploadPage() {
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">Share your notes with students at your college. PDFs only, max {MAX_SIZE_MB}MB.</p>
 
         <form onSubmit={handleSubmit} className="card p-6 flex flex-col gap-5">
-          {/* College */}
           <div>
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-1.5">college</label>
             <select className="select" value={collegeId} onChange={(e) => { setCollegeId(e.target.value); setCycle(""); setSubject(""); }} required>
@@ -157,7 +166,6 @@ export default function UploadPage() {
             </select>
           </div>
 
-          {/* Branch + Semester */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-1.5">branch</label>
@@ -175,10 +183,11 @@ export default function UploadPage() {
             </div>
           </div>
 
-          {/* Cycle — BMSCE sem 1 & 2 only */}
           {showCycle && (
             <div>
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-2">your cycle</label>
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-2">
+                which cycle are you covering this semester?
+              </label>
               <div className="grid grid-cols-2 gap-2">
                 {BMSCE_CYCLES.map((c) => (
                   <button key={c.value} type="button" onClick={() => { setCycle(c.value); setSubject(""); }}
@@ -189,18 +198,9 @@ export default function UploadPage() {
                   </button>
                 ))}
               </div>
-              {semester === "2" && cycle && (
-                <p className="text-xs text-gray-400 dark:text-gray-600 mt-2">
-                  Sem 2 flips your cycle — this will be filed under{" "}
-                  <span className="font-medium text-gray-600 dark:text-gray-400">
-                    {getEffectiveCycle(cycle, 2) === "chemistry" ? "Chemistry" : "Physics"} Cycle
-                  </span>
-                </p>
-              )}
             </div>
           )}
 
-          {/* Subject */}
           <div>
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-1.5">
               subject <span className="text-gray-300 dark:text-gray-700">(optional)</span>
@@ -223,13 +223,11 @@ export default function UploadPage() {
             )}
           </div>
 
-          {/* Title */}
           <div>
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-1.5">title</label>
             <input className="input" placeholder="e.g. Chemistry Unit 2 — Thermodynamics notes" value={title} onChange={(e) => setTitle(e.target.value)} required />
           </div>
 
-          {/* Type */}
           <div>
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-2">type</label>
             <div className="grid grid-cols-5 gap-2">
@@ -244,7 +242,6 @@ export default function UploadPage() {
             </div>
           </div>
 
-          {/* PDF upload */}
           <div>
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-1.5">
               PDF file <span className="text-gray-300 dark:text-gray-700">(max {MAX_SIZE_MB}MB)</span>
@@ -273,7 +270,6 @@ export default function UploadPage() {
             )}
           </div>
 
-          {/* Uploader name */}
           <div>
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-1.5">
               your name <span className="text-gray-300 dark:text-gray-700">(optional)</span>
