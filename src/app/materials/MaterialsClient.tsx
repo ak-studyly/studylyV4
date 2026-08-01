@@ -14,6 +14,7 @@ import {
   MATERIAL_TYPE_LABELS, MATERIAL_TYPE_STYLES,
   formatPostTime, formatFileSize,
   BMSCE_CYCLES, BMSCE_SUBJECTS, BMSCE_SHARED_SUBJECTS,
+  BMSCE_ELECTIVES, isElective, getSemestersForSubject,
   needsCycle, getVoterKey,
   type Cycle,
 } from "@/lib/utils";
@@ -72,7 +73,7 @@ export default function MaterialsClient({
   const step1Done = !!collegeId;
   const step2Done = step1Done && !!branch;
   const step3Done = step2Done && !!semester;
-  const canSearch = step3Done && (!showCycle || !!cycle);
+  const canSearch = step3Done && (!showCycle || !!cycle || (!!subject && isElective(subject)));
 
   useEffect(() => {
     try {
@@ -108,11 +109,15 @@ export default function MaterialsClient({
       .select("*")
       .eq("college_id", collegeId)
       .eq("branch", branch)
-      .eq("semester", parseInt(semester))
+      .in("semester", getSemestersForSubject(subject, parseInt(semester)))
       .eq("approved", true)
       .order("upvotes", { ascending: false });
 
-    if (showCycle && cycle) {
+    if (subject && isElective(subject)) {
+      // Electives ignore cycle entirely — same notes for everyone,
+      // sem 1 and sem 2 alike. Subject match is enough.
+      q = q.eq("subject", subject);
+    } else if (showCycle && cycle) {
       if (subject && BMSCE_SHARED_SUBJECTS.includes(subject)) {
         // shared subject (e.g. Maths) is stored with cycle = null
         q = q.eq("subject", subject);
@@ -146,14 +151,14 @@ export default function MaterialsClient({
     setVotingId(null);
     if (error || !data || !data[0]) return;
 
-    const { voted, new_upvotes: upvotes } = data[0] as { voted: boolean; new_upvotes: number };
+    const { voted, upvotes } = data[0] as { voted: boolean; upvotes: number };
 
     setMaterials((prev) => prev.map((m) => m.id === material.id ? { ...m, upvotes } : m));
 
     setVotedIds((prev) => {
       const next = new Set(prev);
       if (voted) next.add(material.id); else next.delete(material.id);
-      localStorage.setItem(VOTED_KEY, JSON.stringify(Array.from(next)));
+      localStorage.setItem(VOTED_KEY, JSON.stringify([...next]));
       return next;
     });
   }
@@ -241,6 +246,22 @@ export default function MaterialsClient({
                 <input className="input" placeholder="subject (optional)" value={subject} onChange={(e) => setSubject(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") fetchMaterials(); }} />
               )}
             </div>
+
+            {/* Electives — same notes for sem 1 & 2, no cycle involved */}
+            {(semester === "1" || semester === "2") && BMSCE_ELECTIVES.length > 0 && (
+              <div className={cn("transition-all duration-300 overflow-hidden", step3Done ? "max-h-32 opacity-100" : "max-h-0 opacity-0")}>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">or pick an elective (same notes for sem 1 &amp; 2)</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {BMSCE_ELECTIVES.map((s) => (
+                    <button key={s} type="button" onClick={() => setSubject(subject === s ? "" : s)}
+                      className={cn("text-xs px-3 py-1.5 rounded-full border transition-all",
+                        subject === s ? "bg-brand border-brand text-white font-medium" : "border-black/10 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-800")}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className={cn("transition-all duration-300 overflow-hidden", canSearch ? "max-h-20 opacity-100" : "max-h-0 opacity-0")}>
               <button onClick={() => fetchMaterials()} disabled={!canSearch || loading} className="btn-primary w-full flex items-center justify-center gap-2 mt-1">
