@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import MaterialsClient from "./MaterialsClient";
+import { getSemestersForSubject, isElective } from "@/lib/utils";
 import type { College, Material } from "@/types";
 
 type Props = {
@@ -35,17 +36,23 @@ export default async function MaterialsPage({ searchParams }: Props) {
       .single();
     college = data;
 
+    const semesterList = getSemestersForSubject(subject ?? "", parseInt(semester));
+
     let q = supabase
       .from("materials")
       .select("*")
       .eq("college_id", collegeId)
       .eq("branch", branch)
-      .eq("semester", parseInt(semester))
+      .in("semester", semesterList)
       .eq("approved", true)
       .order("upvotes", { ascending: false });
 
-    if (cycle) q = q.or(`cycle.eq.${cycle},cycle.is.null`);
-    if (subject) q = q.eq("subject", subject);
+    if (subject && isElective(subject)) {
+      q = q.eq("subject", subject);
+    } else {
+      if (cycle) q = q.or(`cycle.eq.${cycle},cycle.is.null`);
+      if (subject) q = q.eq("subject", subject);
+    }
     if (type && type !== "all") q = q.eq("type", type);
 
     const { data: mats } = await q;
