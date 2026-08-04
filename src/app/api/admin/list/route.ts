@@ -9,14 +9,24 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = createServiceClient();
-  const { data, error } = await supabase
+
+  const { data: materials, error: materialsError } = await supabase
     .from("materials")
     .select("*")
     .order("created_at", { ascending: false });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (materialsError) {
+    return NextResponse.json({ error: materialsError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ materials: data });
+  const { data: colleges, error: collegesError } = await supabase
+    .from("colleges")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (collegesError) {
+    return NextResponse.json({ error: collegesError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ materials, colleges });
 }
