@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Trash2, CheckCircle, XCircle, FileText, Lock } from "lucide-react";
+import { Trash2, CheckCircle, XCircle, FileText, Lock, School } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import { cn, MATERIAL_TYPE_LABELS, MATERIAL_TYPE_STYLES, formatPostTime, formatFileSize } from "@/lib/utils";
-import type { Material } from "@/types";
+import type { Material, College } from "@/types";
 
 const SECRET_SESSION_KEY = "studyly_admin_secret";
 
@@ -12,6 +12,7 @@ export default function AdminPage() {
   const [secret, setSecret] = useState("");
   const [authed, setAuthed] = useState(false);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [colleges, setColleges] = useState<College[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -40,10 +41,11 @@ export default function AdminPage() {
     }
     setAuthed(true);
     setMaterials(data.materials);
+    setColleges(data.colleges ?? []);
     sessionStorage.setItem(SECRET_SESSION_KEY, s);
   }
 
-  async function handleApprove(id: string, approved: boolean) {
+  async function handleApproveMaterial(id: string, approved: boolean) {
     setBusyId(id);
     const res = await fetch("/api/admin/approve", {
       method: "POST",
@@ -55,7 +57,7 @@ export default function AdminPage() {
     }
   }
 
-  async function handleDelete(id: string, title: string) {
+  async function handleDeleteMaterial(id: string, title: string) {
     if (!confirm(`Delete "${title}"? This removes the PDF and the listing permanently.`)) return;
     setBusyId(id);
     const res = await fetch("/api/admin/delete", {
@@ -65,6 +67,34 @@ export default function AdminPage() {
     setBusyId(null);
     if (res.ok) {
       setMaterials((prev) => prev.filter((m) => m.id !== id));
+    } else {
+      const data = await res.json();
+      alert(data.error ?? "Delete failed");
+    }
+  }
+
+  async function handleApproveCollege(id: string, approved: boolean) {
+    setBusyId(id);
+    const res = await fetch("/api/admin/approve-college", {
+      method: "POST",
+      body: JSON.stringify({ id, approved, secret }),
+    });
+    setBusyId(null);
+    if (res.ok) {
+      setColleges((prev) => prev.map((c) => c.id === id ? { ...c, approved } : c));
+    }
+  }
+
+  async function handleDeleteCollege(id: string, name: string) {
+    if (!confirm(`Reject and delete "${name}"? This cannot be undone.`)) return;
+    setBusyId(id);
+    const res = await fetch("/api/admin/delete-college", {
+      method: "POST",
+      body: JSON.stringify({ id, secret }),
+    });
+    setBusyId(null);
+    if (res.ok) {
+      setColleges((prev) => prev.filter((c) => c.id !== id));
     } else {
       const data = await res.json();
       alert(data.error ?? "Delete failed");
@@ -95,8 +125,10 @@ export default function AdminPage() {
     );
   }
 
-  const pending = materials.filter((m) => !m.approved);
-  const approved = materials.filter((m) => m.approved);
+  const pendingMaterials = materials.filter((m) => !m.approved);
+  const approvedMaterials = materials.filter((m) => m.approved);
+  const pendingColleges = colleges.filter((c) => !c.approved);
+  const approvedColleges = colleges.filter((c) => c.approved);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-neutral-950">
@@ -104,14 +136,42 @@ export default function AdminPage() {
       <div className="max-w-3xl mx-auto px-6 py-8">
         <h1 className="font-serif text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-6">admin</h1>
 
-        {pending.length > 0 && (
+        {/* Colleges */}
+        {pendingColleges.length > 0 && (
           <div className="mb-8">
             <p className="text-xs font-medium text-gray-400 dark:text-gray-600 uppercase tracking-wider mb-3">
-              pending review ({pending.length})
+              colleges pending review ({pendingColleges.length})
             </p>
             <div className="flex flex-col gap-2">
-              {pending.map((m) => (
-                <AdminRow key={m.id} material={m} busy={busyId === m.id} onApprove={handleApprove} onDelete={handleDelete} />
+              {pendingColleges.map((c) => (
+                <CollegeRow key={c.id} college={c} busy={busyId === c.id} onApprove={handleApproveCollege} onDelete={handleDeleteCollege} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {approvedColleges.length > 0 && (
+          <div className="mb-10">
+            <p className="text-xs font-medium text-gray-400 dark:text-gray-600 uppercase tracking-wider mb-3">
+              approved colleges ({approvedColleges.length})
+            </p>
+            <div className="flex flex-col gap-2">
+              {approvedColleges.map((c) => (
+                <CollegeRow key={c.id} college={c} busy={busyId === c.id} onApprove={handleApproveCollege} onDelete={handleDeleteCollege} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Materials */}
+        {pendingMaterials.length > 0 && (
+          <div className="mb-8">
+            <p className="text-xs font-medium text-gray-400 dark:text-gray-600 uppercase tracking-wider mb-3">
+              materials pending review ({pendingMaterials.length})
+            </p>
+            <div className="flex flex-col gap-2">
+              {pendingMaterials.map((m) => (
+                <MaterialRow key={m.id} material={m} busy={busyId === m.id} onApprove={handleApproveMaterial} onDelete={handleDeleteMaterial} />
               ))}
             </div>
           </div>
@@ -119,11 +179,11 @@ export default function AdminPage() {
 
         <div>
           <p className="text-xs font-medium text-gray-400 dark:text-gray-600 uppercase tracking-wider mb-3">
-            live ({approved.length})
+            live materials ({approvedMaterials.length})
           </p>
           <div className="flex flex-col gap-2">
-            {approved.map((m) => (
-              <AdminRow key={m.id} material={m} busy={busyId === m.id} onApprove={handleApprove} onDelete={handleDelete} />
+            {approvedMaterials.map((m) => (
+              <MaterialRow key={m.id} material={m} busy={busyId === m.id} onApprove={handleApproveMaterial} onDelete={handleDeleteMaterial} />
             ))}
           </div>
         </div>
@@ -132,7 +192,47 @@ export default function AdminPage() {
   );
 }
 
-function AdminRow({
+function CollegeRow({
+  college: c, busy, onApprove, onDelete,
+}: {
+  college: College;
+  busy: boolean;
+  onApprove: (id: string, approved: boolean) => void;
+  onDelete: (id: string, name: string) => void;
+}) {
+  return (
+    <div className="card p-3 flex items-center gap-3">
+      <School size={16} className="text-gray-400 flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{c.name}</p>
+        <p className="text-xs text-gray-400 dark:text-gray-600">{c.city}, {c.state}</p>
+      </div>
+      <button
+        onClick={() => onApprove(c.id, !c.approved)}
+        disabled={busy}
+        className={cn(
+          "flex items-center gap-1 text-xs px-2 py-1 rounded-lg border flex-shrink-0 transition-colors",
+          c.approved
+            ? "border-black/10 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800"
+            : "border-brand bg-brand text-white hover:opacity-90"
+        )}
+      >
+        {c.approved ? <XCircle size={12} /> : <CheckCircle size={12} />}
+        {c.approved ? "unapprove" : "approve"}
+      </button>
+      <button
+        onClick={() => onDelete(c.id, c.name)}
+        disabled={busy}
+        className="p-1.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex-shrink-0"
+        title="delete permanently"
+      >
+        <Trash2 size={15} />
+      </button>
+    </div>
+  );
+}
+
+function MaterialRow({
   material: m, busy, onApprove, onDelete,
 }: {
   material: Material;
