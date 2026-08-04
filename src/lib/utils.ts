@@ -84,7 +84,7 @@ export const BMSCE_SHARED_SUBJECTS = BMSCE_SUBJECTS.chemistry.filter((s) =>
 // of whether the student is in sem 1 or sem 2 — one set of notes
 // covers both. Fill in the actual subject names here.
 export const BMSCE_ELECTIVES: string[] = [
-  // e.g. "Environmental Science", "Constitution of India"
+   "Mechanical", "Electronics", "Civil", "Electrical",
 ];
 
 export function isElective(subject: string): boolean {
