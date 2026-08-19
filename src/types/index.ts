@@ -19,6 +19,10 @@ export type Material = {
   cycle: Cycle | null;
   subject: string | null;
   title: string;
+  // the academic year this material is FROM (e.g. 2024) — distinct
+  // from semester (1-8). Matters most for CIE/exam papers, which
+  // repeat every year with different content.
+  material_year: number;
   type: MaterialType;
   file_url: string;
   file_path: string;
