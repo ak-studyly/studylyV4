@@ -45,6 +45,9 @@ export default async function MaterialsPage({ searchParams }: Props) {
       .eq("branch", branch)
       .in("semester", semesterList)
       .eq("approved", true)
+      // Default sort on first load: newest material year first,
+      // upvotes as tiebreaker. Matches the client's default sort.
+      .order("material_year", { ascending: false })
       .order("upvotes", { ascending: false });
 
     if (subject && isElective(subject)) {
