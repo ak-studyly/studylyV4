@@ -6,7 +6,7 @@ import { Upload, CheckCircle, FileText, X, AlertCircle, FlaskConical, Atom } fro
 import Navbar from "@/components/layout/Navbar";
 import { createClient } from "@/lib/supabase/client";
 import {
-  cn, BRANCHES, SEMESTERS, CLASS_KEY,
+  cn, BRANCHES, SEMESTERS, CLASS_KEY, getMaterialYears,
   BMSCE_CYCLES, BMSCE_SUBJECTS, BMSCE_SHARED_SUBJECTS,
   BMSCE_ELECTIVES, isElective,
   needsCycle, resolveCycleForStorage,
@@ -24,6 +24,7 @@ const MATERIAL_TYPES: { value: MaterialType; label: string; desc: string }[] = [
 
 const MAX_SIZE_MB = 10;
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+const MATERIAL_YEARS = getMaterialYears();
 
 export default function UploadPage() {
   const router = useRouter();
@@ -31,10 +32,10 @@ export default function UploadPage() {
   const [collegeId, setCollegeId]         = useState("");
   const [branch, setBranch]               = useState("");
   const [semester, setSemester]           = useState("");
-  // Raw cycle picked, representing THIS semester directly — never flipped.
   const [cycle, setCycle]                 = useState<Cycle | "">("");
   const [subject, setSubject]             = useState("");
   const [customSubject, setCustomSubject] = useState("");
+  const [materialYear, setMaterialYear]   = useState(String(MATERIAL_YEARS[0]));
   const [title, setTitle]                 = useState("");
   const [type, setType]                   = useState<MaterialType>("notes");
   const [uploaderName, setUploaderName]   = useState("");
@@ -61,11 +62,8 @@ export default function UploadPage() {
         setCollegeId(saved.collegeId);
         setBranch(saved.branch);
         setSemester(String(saved.semester));
-        // NOTE: we deliberately do NOT restore saved.cycle here.
-        // The cycle applies to a specific semester, and pre-filling
-        // it across a semester change is exactly the kind of stale
-        // carry-over that caused the earlier double-flip bug. The
-        // student re-picks their cycle each time they land here.
+        // Cycle is deliberately NOT restored — re-picked each time
+        // to avoid stale carry-over across semesters.
       }
     } catch {}
   }, []);
@@ -85,15 +83,13 @@ export default function UploadPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!file || !collegeId || !branch || !semester || !title) return;
+    if (!file || !collegeId || !branch || !semester || !title || !materialYear) return;
     if (showCycle && !cycle && !isElective(finalSubject)) return;
     setLoading(true);
     setError(null);
     const supabase = createClient();
     try {
       const safeName = file.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9._-]/g, "");
-      // Path is scoped to the EXACT semester selected — no derived
-      // or effective semester is ever used for storage location.
       const path = `${collegeId}/${branch}/${semester}/${Date.now()}_${safeName}`;
 
       const { error: uploadError } = await supabase.storage
@@ -103,9 +99,6 @@ export default function UploadPage() {
 
       const { data: { publicUrl } } = supabase.storage.from("materials").getPublicUrl(path);
 
-      // cycle stored = null for shared subjects (Maths), otherwise
-      // the exact raw cycle picked — matching what the browse page
-      // queries by, with no transform in between.
       const cycleForStorage = resolveCycleForStorage(cycle, finalSubject);
 
       const { error: insertError } = await supabase.from("materials").insert({
@@ -114,6 +107,7 @@ export default function UploadPage() {
         semester:      parseInt(semester),
         cycle:         cycleForStorage,
         subject:       finalSubject || null,
+        material_year: parseInt(materialYear),
         title:         title.trim(),
         type,
         file_url:      publicUrl,
@@ -184,6 +178,19 @@ export default function UploadPage() {
             </div>
           </div>
 
+          {/* Year of material — separate from semester */}
+          <div>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-1.5">
+              which year is this material from?
+            </label>
+            <select className="select" value={materialYear} onChange={(e) => setMaterialYear(e.target.value)} required>
+              {MATERIAL_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1.5">
+              e.g. for a CIE paper, the year that exam was conducted — not the semester.
+            </p>
+          </div>
+
           {showCycle && (
             <div>
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-2">
@@ -224,7 +231,6 @@ export default function UploadPage() {
             )}
           </div>
 
-          {/* Electives — same notes apply to sem 1 & 2, no cycle involved */}
           {(semester === "1" || semester === "2") && BMSCE_ELECTIVES.length > 0 && (
             <div>
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-2">
