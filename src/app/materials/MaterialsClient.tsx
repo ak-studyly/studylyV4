@@ -4,19 +4,20 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Star, Search, SlidersHorizontal, PlusCircle,
-  FileText, ArrowUpRight, FlaskConical, Atom,
+  FileText, ArrowUpRight, FlaskConical, Atom, ArrowDownUp,
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import AddCollegeModal from "@/components/ui/AddCollegeModal";
 import { createClient } from "@/lib/supabase/client";
 import {
-  cn, BRANCHES, SEMESTERS, CLASS_KEY, VOTED_KEY,
+  cn, BRANCHES, SEMESTERS, CLASS_KEY, VOTED_KEY, getMaterialYears,
   MATERIAL_TYPE_LABELS, MATERIAL_TYPE_STYLES,
   formatPostTime, formatFileSize,
   BMSCE_CYCLES, BMSCE_SUBJECTS, BMSCE_SHARED_SUBJECTS,
   BMSCE_ELECTIVES, isElective, getSemestersForSubject,
   needsCycle, getVoterKey,
-  type Cycle,
+  SORT_OPTIONS, DEFAULT_SORT,
+  type Cycle, type SortOption,
 } from "@/lib/utils";
 import type { College, Material, SavedClass } from "@/types";
 
@@ -28,6 +29,8 @@ const TYPE_OPTIONS = [
   { value: "cie3", label: "CIE 3" },
   { value: "exam", label: "end sem" },
 ];
+
+const MATERIAL_YEARS = getMaterialYears();
 
 type Params = {
   collegeId: string;
@@ -53,12 +56,11 @@ export default function MaterialsClient({
   const [collegeId, setCollegeId]   = useState(initialParams.collegeId);
   const [branch, setBranch]         = useState(initialParams.branch);
   const [semester, setSemester]     = useState(initialParams.semester ? String(initialParams.semester) : "");
-  // `cycle` is always the raw, directly-picked value for THIS semester.
-  // It is never flipped or transformed — the same value is used for
-  // the subject list, the DB query, and (in upload) the DB write.
   const [cycle, setCycle]           = useState<Cycle | "">(initialParams.cycle);
   const [subject, setSubject]       = useState(initialParams.subject);
   const [typeFilter, setTypeFilter] = useState(initialParams.type || "all");
+  const [yearFilter, setYearFilter] = useState<string>("all");
+  const [sortBy, setSortBy]         = useState<SortOption>(DEFAULT_SORT);
   const [materials, setMaterials]   = useState<Material[]>(initialMaterials);
   const [loading, setLoading]       = useState(false);
   const [searched, setSearched]     = useState(initialMaterials.length > 0);
@@ -95,14 +97,16 @@ export default function MaterialsClient({
     }
   }, [collegeId, branch, semester, cycle, selectedCollege, showCycle]);
 
-  const fetchMaterials = useCallback(async (overrideType?: string) => {
+  const fetchMaterials = useCallback(async (overrideType?: string, overrideSort?: SortOption, overrideYear?: string) => {
     if (!collegeId || !branch || !semester) return;
-    if (showCycle && !cycle) return;
+    if (showCycle && !cycle && !(subject && isElective(subject))) return;
     setLoading(true);
     setSearched(true);
 
     const supabase = createClient();
     const activeType = overrideType ?? typeFilter;
+    const activeSort = overrideSort ?? sortBy;
+    const activeYear = overrideYear ?? yearFilter;
 
     let q = supabase
       .from("materials")
@@ -110,16 +114,12 @@ export default function MaterialsClient({
       .eq("college_id", collegeId)
       .eq("branch", branch)
       .in("semester", getSemestersForSubject(subject, parseInt(semester)))
-      .eq("approved", true)
-      .order("upvotes", { ascending: false });
+      .eq("approved", true);
 
     if (subject && isElective(subject)) {
-      // Electives ignore cycle entirely — same notes for everyone,
-      // sem 1 and sem 2 alike. Subject match is enough.
       q = q.eq("subject", subject);
     } else if (showCycle && cycle) {
       if (subject && BMSCE_SHARED_SUBJECTS.includes(subject)) {
-        // shared subject (e.g. Maths) is stored with cycle = null
         q = q.eq("subject", subject);
       } else if (subject) {
         q = q.eq("subject", subject).or(`cycle.eq.${cycle},cycle.is.null`);
@@ -131,14 +131,25 @@ export default function MaterialsClient({
     }
 
     if (activeType !== "all") q = q.eq("type", activeType);
+    if (activeYear !== "all") q = q.eq("material_year", parseInt(activeYear));
+
+    // Newest material year first by default; ties broken by upvotes.
+    // "top voted" and "recently uploaded" are explicit alternatives.
+    if (activeSort === "material_year") {
+      q = q.order("material_year", { ascending: false }).order("upvotes", { ascending: false });
+    } else if (activeSort === "upvotes") {
+      q = q.order("upvotes", { ascending: false }).order("material_year", { ascending: false });
+    } else {
+      q = q.order("created_at", { ascending: false });
+    }
 
     const { data } = await q;
     setMaterials((data as Material[]) ?? []);
     setLoading(false);
-  }, [collegeId, branch, semester, cycle, subject, typeFilter, showCycle]);
+  }, [collegeId, branch, semester, cycle, subject, typeFilter, sortBy, yearFilter, showCycle]);
 
   async function handleToggleUpvote(material: Material) {
-    if (votingId) return; // prevent double-click races
+    if (votingId) return;
     setVotingId(material.id);
     const voterKey = getVoterKey();
     const supabase = createClient();
@@ -207,7 +218,7 @@ export default function MaterialsClient({
               </select>
             </div>
 
-            <div className={cn("transition-all duration-300 overflow-hidden", (step3Done && showCycle) ? "max-h-32 opacity-100" : "max-h-0 opacity-0")}>
+            <div className={cn("transition-all duration-300 overflow-hidden", (step3Done && showCycle) ? "max-h-36 opacity-100" : "max-h-0 opacity-0")}>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">which cycle are you covering this semester?</p>
               <div className="grid grid-cols-2 gap-2">
                 {BMSCE_CYCLES.map((c) => (
@@ -247,7 +258,6 @@ export default function MaterialsClient({
               )}
             </div>
 
-            {/* Electives — same notes for sem 1 & 2, no cycle involved */}
             {(semester === "1" || semester === "2") && BMSCE_ELECTIVES.length > 0 && (
               <div className={cn("transition-all duration-300 overflow-hidden", step3Done ? "max-h-32 opacity-100" : "max-h-0 opacity-0")}>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">or pick an elective (same notes for sem 1 &amp; 2)</p>
@@ -279,15 +289,46 @@ export default function MaterialsClient({
 
         {searched && (
           <>
-            <div className="flex items-center gap-2 mb-4 flex-wrap">
+            {/* Type filter */}
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
               <SlidersHorizontal size={13} className="text-gray-400 dark:text-gray-600" />
               {TYPE_OPTIONS.map((t) => (
-                <button key={t.value} onClick={() => { setTypeFilter(t.value); fetchMaterials(t.value); }}
+                <button key={t.value} onClick={() => { setTypeFilter(t.value); fetchMaterials(t.value, undefined, undefined); }}
                   className={cn("text-xs px-3 py-1.5 rounded-full border transition-all",
                     typeFilter === t.value ? "bg-brand border-brand text-white font-medium" : "border-black/10 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-800")}>
                   {t.label}
                 </button>
               ))}
+            </div>
+
+            {/* Year filter + sort */}
+            <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-gray-400 dark:text-gray-600">year:</span>
+                <button onClick={() => { setYearFilter("all"); fetchMaterials(undefined, undefined, "all"); }}
+                  className={cn("text-xs px-2.5 py-1 rounded-full border transition-all",
+                    yearFilter === "all" ? "bg-brand border-brand text-white font-medium" : "border-black/10 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-800")}>
+                  all
+                </button>
+                {MATERIAL_YEARS.map((y) => (
+                  <button key={y} onClick={() => { setYearFilter(String(y)); fetchMaterials(undefined, undefined, String(y)); }}
+                    className={cn("text-xs px-2.5 py-1 rounded-full border transition-all",
+                      yearFilter === String(y) ? "bg-brand border-brand text-white font-medium" : "border-black/10 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-800")}>
+                    {y}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <ArrowDownUp size={13} className="text-gray-400 dark:text-gray-600" />
+                <select
+                  className="text-xs bg-transparent border border-black/10 dark:border-white/10 rounded-full px-2.5 py-1 text-gray-600 dark:text-gray-400 focus:outline-none cursor-pointer"
+                  value={sortBy}
+                  onChange={(e) => { const v = e.target.value as SortOption; setSortBy(v); fetchMaterials(undefined, v, undefined); }}
+                >
+                  {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
             </div>
 
             {loading ? (
@@ -308,7 +349,7 @@ export default function MaterialsClient({
               </div>
             ) : (
               <div className="flex flex-col gap-3">
-                <p className="text-xs text-gray-400 dark:text-gray-600">{materials.length} result{materials.length !== 1 ? "s" : ""} — sorted by upvotes</p>
+                <p className="text-xs text-gray-400 dark:text-gray-600">{materials.length} result{materials.length !== 1 ? "s" : ""}</p>
                 {materials.map((m) => (
                   <MaterialCard
                     key={m.id}
@@ -365,6 +406,7 @@ function MaterialCard({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5 flex-wrap">
           <span className={cn("tag", MATERIAL_TYPE_STYLES[m.type])}>{MATERIAL_TYPE_LABELS[m.type]}</span>
+          <span className="tag bg-gray-100 text-gray-600 dark:bg-neutral-800 dark:text-gray-300">{m.material_year}</span>
           {m.subject && <span className="text-xs text-gray-400 dark:text-gray-600">{m.subject}</span>}
         </div>
         <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{m.title}</p>
