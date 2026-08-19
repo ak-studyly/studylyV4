@@ -52,6 +52,31 @@ export const THEME_KEY = "studyly_theme";
 export const VOTER_KEY = "studyly_voter";
 export const VOTED_KEY = "studyly_voted";
 
+// ── Material year ─────────────────────────────────────────
+// The academic year a material is FROM (e.g. 2024) — separate
+// from semester. Most relevant for CIE/exam papers, which repeat
+// every year with new content. Shows as a tag; newest first by
+// default.
+
+export function getMaterialYears(): number[] {
+  const current = new Date().getFullYear();
+  const years: number[] = [];
+  for (let y = current; y >= current - 6; y--) years.push(y);
+  return years;
+}
+
+// ── Sorting ────────────────────────────────────────────────
+
+export type SortOption = "material_year" | "upvotes" | "recent";
+
+export const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: "material_year", label: "newest material" },
+  { value: "upvotes",       label: "top voted" },
+  { value: "recent",        label: "recently uploaded" },
+];
+
+export const DEFAULT_SORT: SortOption = "material_year";
+
 // ── BMSCE cycle logic ─────────────────────────────────────
 // NOTE: the cycle picker always asks "which cycle applies to
 // you THIS semester" — there is no automatic sem-2 swap. The
@@ -84,7 +109,7 @@ export const BMSCE_SHARED_SUBJECTS = BMSCE_SUBJECTS.chemistry.filter((s) =>
 // of whether the student is in sem 1 or sem 2 — one set of notes
 // covers both. Fill in the actual subject names here.
 export const BMSCE_ELECTIVES: string[] = [
-   "Mechanical", "Electronics", "Civil", "Electrical",
+  // e.g. "Environmental Science", "Constitution of India"
 ];
 
 export function isElective(subject: string): boolean {
