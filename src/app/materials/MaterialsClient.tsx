@@ -350,15 +350,36 @@ export default function MaterialsClient({
             ) : (
               <div className="flex flex-col gap-3">
                 <p className="text-xs text-gray-400 dark:text-gray-600">{materials.length} result{materials.length !== 1 ? "s" : ""}</p>
-                {materials.map((m) => (
-                  <MaterialCard
-                    key={m.id}
-                    material={m}
-                    hasVoted={votedIds.has(m.id)}
-                    voting={votingId === m.id}
-                    onToggleUpvote={() => handleToggleUpvote(m)}
-                  />
-                ))}
+                {yearFilter === "all" ? (
+                  groupByYear(materials).map(([year, group]) => (
+                    <div key={year} className="flex flex-col gap-3">
+                      <div className="flex items-center gap-2 mt-1">
+                        <h3 className="font-serif text-base font-semibold text-gray-900 dark:text-gray-100">{year}</h3>
+                        <div className="flex-1 h-px bg-black/8 dark:bg-white/8" />
+                        <span className="text-xs text-gray-400 dark:text-gray-600">{group.length} item{group.length !== 1 ? "s" : ""}</span>
+                      </div>
+                      {group.map((m) => (
+                        <MaterialCard
+                          key={m.id}
+                          material={m}
+                          hasVoted={votedIds.has(m.id)}
+                          voting={votingId === m.id}
+                          onToggleUpvote={() => handleToggleUpvote(m)}
+                        />
+                      ))}
+                    </div>
+                  ))
+                ) : (
+                  materials.map((m) => (
+                    <MaterialCard
+                      key={m.id}
+                      material={m}
+                      hasVoted={votedIds.has(m.id)}
+                      voting={votingId === m.id}
+                      onToggleUpvote={() => handleToggleUpvote(m)}
+                    />
+                  ))
+                )}
               </div>
             )}
           </>
@@ -377,6 +398,19 @@ export default function MaterialsClient({
       <AddCollegeModal open={addCollegeOpen} onClose={() => setAddCollegeOpen(false)} />
     </div>
   );
+}
+
+// Groups materials by material_year, preserving the relative order
+// items already have (from the active sort), and returns groups
+// ordered newest year first.
+function groupByYear(materials: Material[]): [number, Material[]][] {
+  const map = new Map<number, Material[]>();
+  for (const m of materials) {
+    const list = map.get(m.material_year) ?? [];
+    list.push(m);
+    map.set(m.material_year, list);
+  }
+  return Array.from(map.entries()).sort((a, b) => b[0] - a[0]);
 }
 
 function MaterialCard({
