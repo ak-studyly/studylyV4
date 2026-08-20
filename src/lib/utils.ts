@@ -96,7 +96,7 @@ export const BMSCE_CYCLES: { value: Cycle; label: string }[] = [
 export const BMSCE_CYCLE_SEMESTERS = [1, 2];
 
 export const BMSCE_SUBJECTS: Record<Cycle, string[]> = {
-  chemistry: ["Chemistry", "Maths", "AI", "Python", "English"],
+  chemistry: ["Chemistry", "Maths", "AI", "Python", "English", "Constitution", "Communication Skills"],
   physics:   ["Physics", "Maths", "CAED", "C", "Kannada", "Soft Skills"],
 };
 
