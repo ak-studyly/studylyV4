@@ -48,6 +48,7 @@ export default function UploadPage() {
 
   const selectedCollege = colleges.find((c) => c.id === collegeId);
   const showCycle = selectedCollege ? needsCycle(selectedCollege.name, parseInt(semester || "0")) : false;
+  const availableSubjects = (showCycle && cycle) ? BMSCE_SUBJECTS[cycle] : null;
   const finalSubject = isElective(subject)
   ? subject
   : (availableSubjects ? subject : customSubject);
